@@ -39,7 +39,7 @@ Orbit сохраняет подписку, список серверов, спо
 
 ## Сборка из исходников
 
-Понадобятся Windows x64, PowerShell 7 и Rust с инструментами сборки для Windows. Для MSVC откройте консоль Visual Studio, где доступен `rc.exe`. Для GNU укажите компоновщик в `CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER` и добавьте в `PATH` соответствующий `windres.exe`.
+Понадобятся Windows x64, PowerShell 7 и Rust с инструментами сборки для Windows. Для MSVC откройте консоль Visual Studio, где доступен `rc.exe`. Для GNU добавьте в `PATH` инструменты MinGW-w64, включая `windres.exe` и `dlltool.exe`. При использовании LLVM-MinGW укажите `x86_64-w64-mingw32-clang.exe` в `CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER` и задайте `RUSTFLAGS=-C link-self-contained=yes`.
 
 ```powershell
 pwsh -File ./scripts/prepare-xray.ps1
