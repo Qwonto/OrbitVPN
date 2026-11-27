@@ -610,12 +610,16 @@ pub fn import(input: &str, countries: &[Country]) -> Result<Subscription, String
     if !allowed(&url) || url.fragment().is_some() {
         return Err("Проверьте HTTPS-адрес подписки.".into());
     }
+    let origin = url.origin();
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .user_agent(concat!("OrbitVPN/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(12))
         .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-            if allowed(attempt.url()) && attempt.previous().len() < 5 {
+            if allowed(attempt.url())
+                && attempt.url().origin() == origin
+                && attempt.previous().len() < 5
+            {
                 attempt.follow()
             } else {
                 attempt.error("redirect")
@@ -625,6 +629,7 @@ pub fn import(input: &str, countries: &[Country]) -> Result<Subscription, String
         .map_err(|_| "Не удалось запустить HTTPS-запрос.")?;
     let response = client
         .get(url)
+        .header("x-hwid", subscription_hwid()?)
         .send()
         .and_then(|response| response.error_for_status())
         .map_err(|_| "Подписка недоступна. Проверьте адрес и соединение.")?;
@@ -634,6 +639,46 @@ pub fn import(input: &str, countries: &[Country]) -> Result<Subscription, String
         .read_to_end(&mut content)
         .map_err(|_| "Не удалось прочитать подписку.")?;
     parse(&content, countries)
+}
+
+fn subscription_hwid() -> Result<String, &'static str> {
+    use sha2::{Digest, Sha256};
+    use windows_sys::Win32::System::Registry::{
+        HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY, RegGetValueW,
+    };
+
+    let key: Vec<u16> = "SOFTWARE\\Microsoft\\Cryptography\0"
+        .encode_utf16()
+        .collect();
+    let name: Vec<u16> = "MachineGuid\0".encode_utf16().collect();
+    let mut value = [0u16; 64];
+    let mut size = size_of_val(&value) as u32;
+    let result = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ | RRF_SUBKEY_WOW6464KEY,
+            std::ptr::null_mut(),
+            value.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    let guid = String::from_utf16_lossy(
+        &value[..value
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(value.len())],
+    );
+    if result != 0 {
+        return Err("Не удалось определить идентификатор устройства.");
+    }
+    let guid = uuid::Uuid::parse_str(&guid)
+        .map_err(|_| "Не удалось определить идентификатор устройства.")?;
+    let mut hash = Sha256::new();
+    hash.update(b"OrbitVPN subscription HWID v1");
+    hash.update(guid.as_bytes());
+    Ok(format!("{:x}", hash.finalize()))
 }
 
 #[cfg(test)]
